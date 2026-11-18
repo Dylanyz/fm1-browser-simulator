@@ -377,25 +377,25 @@ header .tools { display: flex; gap: 8px; flex-wrap: wrap; }
 .bk em { color: #6d6d75; bottom: 5px; }
 .wk u, .bk u {
   position: absolute;
-  left: 50%;
-  top: 5px;
-  width: 5px;
+  left: 20%;
+  right: 20%;
+  top: 6px;
   height: 5px;
-  margin-left: -2.5px;
-  border-radius: 50%;
-  background: #0003;
+  border-radius: 3px;
+  background: #0002;
   pointer-events: none;
   --l: 0;
 }
+.wk u { top: calc(60% + 9px); }                         /* below the black keys, where the light shows */
 .bk u { background: #fff2; }
 .wk u::after, .bk u::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: 3px;
   background: var(--ink);
   opacity: var(--l);
-  box-shadow: 0 0 6px var(--ink);
+  box-shadow: 0 0 8px 1px var(--ink), 0 6px 18px 2px color-mix(in srgb, var(--ink) 45%, transparent);
 }
 .wk.on u::after, .bk.on u::after { background: #000; box-shadow: none; }
 
