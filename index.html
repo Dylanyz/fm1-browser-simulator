@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FM-1 Browser Simulator</title>
+<meta name="description" content="Play any M-VAVE FM-1 firmware in the browser: drop in an .rfm1 file and it runs with its screen, sound, keys, knobs and lights. Comes with h1.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="knobface" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#5a5a62"/>
+      <stop offset="0.7" stop-color="#26262b"/>
+    </radialGradient>
+  </defs>
+</svg>
+<div class="wrap">
+  <header>
+    <h1 id="title">FM-1</h1>
+    <p class="sub" id="sub">Loading the firmware…</p>
+    <div class="tools">
+      <button class="chip" id="fwbtn" type="button" aria-expanded="false" aria-controls="drawer">firmware: <b id="fwname">…</b></button>
+      <div class="seg" role="group" aria-label="Controls as">
+        <button type="button" id="m-slider" aria-pressed="true">sliders</button>
+        <button type="button" id="m-knob" aria-pressed="false">knobs</button>
+      </div>
+      <button class="chip" id="sound" type="button">sound: <b>tap anything</b></button>
+    </div>
+  </header>
+
+  <section class="drawer" id="drawer" hidden aria-label="Firmware">
+    <h2>Firmware</h2>
+    <div class="fwlist" id="fwlist"></div>
+    <div class="loadrow">
+      <button class="chip" id="pick" type="button">open an .rfm1 file…</button>
+      <input type="file" id="file" accept=".rfm1,.wasm,application/wasm" hidden>
+      <input type="url" id="url" placeholder="or paste a link to an .rfm1 file" aria-label="Link to an .rfm1 file">
+      <button class="chip" id="go" type="button">load</button>
+    </div>
+    <p class="note">Drop an <code>.rfm1</code> file anywhere on this page to run it. More than fifty community firmwares are built as <code>.rfm1</code> files in the <a href="https://github.com/Quixotic7/RemoteFM1FW/releases/latest" target="_blank" rel="noopener">RemoteFM1FW release</a>, and any fm1-base firmware builds one with <code>tools/build.py APP_DIR --rfm1</code>. Files you load stay in this browser until you remove them; nothing is uploaded anywhere.</p>
+    <div class="err" id="err" role="alert"></div>
+  </section>
+
+  <section class="device" id="device" aria-label="FM-1 panel">
+    <div class="top">
+      <div class="left">
+        <div class="ctls">
+          <div class="ctl" data-role="2"></div>
+          <div class="ctl" data-role="1"></div>
+          <div class="ctl" data-role="0"></div>
+          <div class="ctl" data-role="7"></div>
+        </div>
+        <div class="oct">
+          <button class="btn" data-btn="12" type="button"><i></i><span>OCT −</span></button>
+          <button class="btn" data-btn="13" type="button"><i></i><span>OCT +</span></button>
+        </div>
+      </div>
+
+      <div class="glass" id="glass">
+        <canvas id="lcd" width="240" height="240" aria-label="FM-1 screen"></canvas>
+        <div class="halt" id="halt"><span id="haltmsg">The firmware stopped.</span><button class="chip" id="poweron" type="button">power on again</button></div>
+      </div>
+
+      <div class="right">
+        <div class="knobs">
+          <div class="ctl" data-role="3"></div>
+          <div class="ctl" data-role="4"></div>
+          <div class="ctl" data-role="5"></div>
+          <div class="ctl" data-role="6"></div>
+        </div>
+        <div class="buttons" id="buttons"></div>
+      </div>
+    </div>
+    <div class="keys" id="keys" aria-label="Keyboard, F3 to G5"></div>
+  </section>
+
+  <div class="strip">
+    <label>screen
+      <select id="size">
+        <option value="real">≈ real size</option>
+        <option value="1">1×</option>
+        <option value="2" selected>2×</option>
+        <option value="3">3×</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="midi"> MIDI in</label>
+    <button class="chip" id="power" type="button">power cycle</button>
+    <div class="meter" title="How long the part of the screen that changed would take to reach the FM-1's panel over its SPI link. Under 16.7 ms is 60 frames a second.">
+      <span>screen link</span>
+      <div class="bar"><i id="bar"></i></div>
+      <b id="ms">0.0 ms</b>
+      <span id="fps"></span>
+    </div>
+  </div>
+
+  <details open>
+    <summary>Playing it</summary>
+    <div>
+      <dl class="map">
+        <dt>Keys</dt><dd>Mouse, touch or the computer keyboard. Where you hit a key sets its velocity: near the front is loud, near the back is soft. <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> <kbd>;</kbd> <kbd>'</kbd> are the white keys from F, <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd> <kbd>[</kbd> the black ones.</dd>
+        <dt>Knobs</dt><dd>The FM-1's encoders are endless and click. Switch between sliders and knobs at the top. A knob turns with a drag up or down, the wheel, or the ‹ › buttons (one click each). A slider jumps straight to a value when the firmware tells the simulator what the knob is tied to (h1 does); otherwise it turns the encoder as far as you drag and springs back. <kbd>←</kbd> <kbd>→</kbd> PRESETS, <kbd>↑</kbd> <kbd>↓</kbd> ALGORITHM, <kbd>1</kbd>–<kbd>4</kbd> the four knobs (with <kbd>Shift</kbd> to turn down).</dd>
+        <dt>Buttons</dt><dd>Labelled the way the running firmware names them. Hold one with the mouse or a finger as long as you like. <kbd>Z</kbd> <kbd>X</kbd> are OCT − and OCT +.</dd>
+        <dt>MASTER</dt><dd>The volume pot, passed to the firmware the way the device reads it.</dd>
+        <dt>MIDI in</dt><dd>Plays the firmware from a MIDI keyboard or a DAW through Web MIDI (Chrome, Edge, Firefox).</dd>
+      </dl>
+    </div>
+  </details>
+
+  <details id="about">
+    <summary>About this firmware</summary>
+    <div>
+      <dl class="map" id="aboutmap"></dl>
+      <pre class="credits" id="credits" hidden></pre>
+      <div id="licenses"></div>
+      <p><button class="chip" id="reset" type="button">erase this firmware's saved state</button></p>
+      <div class="log" id="log"></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>What a simulator can and can't tell you</summary>
+    <div>
+      <p>The sound and the picture come from the firmware's own code, compiled for the browser, driven one device millisecond at a time with the same 44.1 kHz audio blocks and 15 ms frames the FM-1 runs. Saves go to a flash image kept in this browser, so a firmware remembers its settings between visits.</p>
+      <p class="note">What it can't show: how hard the FM-1's own processor is working, how the speaker sounds, and how the keys and encoders feel. An .rfm1 is a firmware's host build, so code that only runs on the chip (its drivers, Bluetooth, USB) is not in it. Try a firmware here, then flash the device build with its own installer.</p>
+    </div>
+  </details>
+</div>
+<div class="drop" id="drop">drop the .rfm1 file to run it</div>
+<script>window.FM1_BUILTIN = [{ key: "builtin:h1", url: "firmware/h1.rfm1" }];</script>
+<script src="src/rfm1.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
