@@ -95,5 +95,4 @@ fm1-base is Charles Vestal's, and Felucca, the firmware most of the field grew f
 (Hügelton Instruments). This project has no code from any of them. It isn't affiliated with M-VAVE.
 
 The simulator is MIT licensed ([LICENSE](LICENSE)). Every firmware keeps its own licence: the page shows each
-one's licence texts, credits and exact source under *About this firmware*. h1 is by Jake Handy, all rights
-reserved.
+one's licence texts, credits and exact source under *About this firmware*. h1 is by Jake Handy, also MIT.
