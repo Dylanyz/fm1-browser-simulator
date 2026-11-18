@@ -1,0 +1,12 @@
+{
+  "name": "fm1-browser-simulator",
+  "version": "1.0.0",
+  "description": "Run any M-VAVE FM-1 firmware in the browser from its .rfm1 file. Comes with h1.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tests/run.js",
+    "serve": "python3 -m http.server 8000"
+  }
+}
