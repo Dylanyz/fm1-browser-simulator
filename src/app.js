@@ -94,8 +94,16 @@
   }
   function bindButton(el, b) {
     btnEls[b] = el;
-    el.addEventListener("pointerdown", function (e) { e.preventDefault(); startAudio(); try { el.setPointerCapture(e.pointerId); } catch (x) { /* fine */ } press(b, 1); });
-    var up = function () { if (el.classList.contains("down")) press(b, 0); };
+    /* Shift-click latches a button down until the next click, so the mouse is free to turn an encoder
+     * while the firmware sees the button held (EDIT + SELECT and the like). */
+    el.addEventListener("pointerdown", function (e) {
+      e.preventDefault(); startAudio();
+      if (el.classList.contains("latched")) { el.classList.remove("latched"); press(b, 0); return; }
+      if (e.shiftKey) { el.classList.add("latched"); press(b, 1); return; }
+      try { el.setPointerCapture(e.pointerId); } catch (x) { /* fine */ }
+      press(b, 1);
+    });
+    var up = function () { if (el.classList.contains("down") && !el.classList.contains("latched")) press(b, 0); };
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
     el.addEventListener("keydown", function (e) { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); press(b, 1); } });
@@ -385,7 +393,7 @@
         if (!e.repeat && held["k" + e.code] === undefined) { held["k" + e.code] = KEYMAP[e.code]; keyDown(KEYMAP[e.code], 100); }
         return;
       }
-      if (e.repeat && e.code !== "ArrowUp" && e.code !== "ArrowDown" && !/^Digit[1-4]$/.test(e.code)) return;
+      if (e.repeat && e.code !== "ArrowUp" && e.code !== "ArrowDown" && e.code !== "Period" && e.code !== "Comma" && !/^Digit[1-4]$/.test(e.code)) return;
       switch (e.code) {
         case "KeyZ": tap(12); break;
         case "KeyX": tap(13); break;
@@ -393,6 +401,8 @@
         case "ArrowLeft": turn(2, -1); break;
         case "ArrowUp": turn(1, 1); break;
         case "ArrowDown": turn(1, -1); break;
+        case "Period": turn(0, 1); break;
+        case "Comma": turn(0, -1); break;
         case "Digit1": case "Digit2": case "Digit3": case "Digit4": turn(2 + +e.code.slice(5), e.shiftKey ? -1 : 1); break;
         default: return;
       }

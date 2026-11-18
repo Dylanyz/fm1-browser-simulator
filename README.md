@@ -61,8 +61,8 @@ would need an emulator of that CPU. Use the firmware's `.rfm1` build instead.
 | --- | --- |
 | **Keys** | Mouse, touch, or the computer keyboard: `A S D F G H J K L ; '` are the white keys from F, `W E R Y U O P [` the black ones. Where you hit a key sets its velocity: near the front is loud. |
 | **Sliders or knobs** | The toggle at the top. Knobs turn with a drag up or down, the scroll wheel or the arrow keys. Sliders jump straight to a value when the firmware reports what the knob is tied to (h1 does). Otherwise a slider turns the encoder as far as you drag it, then springs back to the middle. |
-| **Encoders from the keyboard** | `←` `→` PRESETS, `↑` `↓` ALGORITHM, `1`–`4` the four knobs (`Shift` turns down). The ‹ › buttons beside a slider send single clicks, the way the real encoder steps. |
-| **Buttons** | Labelled with the running firmware's own names, and its live labels when it gives them. Hold as long as you like. `Z` `X` are OCT − and OCT +. |
+| **Encoders from the keyboard** | `,` `.` SELECT, `←` `→` PRESETS, `↑` `↓` ALGORITHM, `1`–`4` the four knobs (`Shift` turns down). The ‹ › buttons beside a slider send single clicks, the way the real encoder steps. |
+| **Buttons** | Labelled with the running firmware's own names, and its live labels when it gives them. Hold as long as you like. `Shift`-click latches a button down (click it again to let go), so you can turn an encoder while it is held. `Z` `X` are OCT − and OCT +. |
 | **MIDI in** | Tick it to play the firmware from a MIDI keyboard or a DAW (Web MIDI). |
 | **Power cycle** | Restarts the firmware with its saved state. *About this firmware* erases that state. |
 
