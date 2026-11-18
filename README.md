@@ -37,6 +37,21 @@ Where to get them:
 You can also link straight to a firmware: `?fw=https://example.com/my-firmware.rfm1` (the host has to allow
 cross-site downloads, which GitHub release links don't).
 
+Four of them running here, straight from the release files:
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/fw-felucca.png" alt="Felucca 1.8.2 in the simulator"><br><b>Felucca</b> 1.8.2, Leo Kuroshita</td>
+<td width="50%"><img src="docs/img/fw-choralroot.png" alt="ChoralRoot 0.41 in the simulator, with its own skin and button names"><br><b>ChoralRoot</b> 0.41, Quixotic7: its own skin and button names</td>
+</tr>
+<tr>
+<td><img src="docs/img/fw-amb.png" alt="AMB-1 1.3.2 in the simulator"><br><b>AMB-1</b> 1.3.2, Charles Vestal</td>
+<td><img src="docs/img/fw-ctl.png" alt="CTL-1 1.0.3 in the simulator"><br><b>CTL-1</b> 1.0.3, Charles Vestal</td>
+</tr>
+</table>
+
+![the firmware picker: h1 built in, Felucca and ChoralRoot loaded from files](docs/img/picker.png)
+
 **What it can't run:** a firmware's `.fwsc` install package. That is machine code for the FM-1's JieLi chip and
 would need an emulator of that CPU. Use the firmware's `.rfm1` build instead.
 
@@ -52,6 +67,10 @@ would need an emulator of that CPU. Use the firmware's `.rfm1` build instead.
 | **Power cycle** | Restarts the firmware with its saved state. *About this firmware* erases that state. |
 
 ![the same panel with knobs](docs/img/knobs.png)
+
+<p align="center"><img src="docs/img/phone.png" width="300" alt="the simulator on a phone, with knobs"></p>
+
+On a phone the panel stacks in the order a thumb wants: screen, the four knobs, keys, buttons, then the rest.
 
 The **screen link** meter shows how long the part of the screen that changed would take to reach the FM-1's
 panel over its SPI link. Under 16.7 ms means the device can draw that animation at 60 frames a second.
