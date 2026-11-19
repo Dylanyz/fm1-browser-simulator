@@ -1625,17 +1625,19 @@ kbd {
     $("title").textContent = m.name || i.name;
     $("fwname").textContent = (m.name || i.name) + " " + (m.version || "");
     document.title = (m.name || i.name) + " · FM-1 Browser Simulator";
-    $("sub").textContent = cur.builtin && m.id === "h1"
-      ? "h1, a firmware for the M-VAVE FM-1, running from its own code: the same 240 × 240 pixels and 44.1 kHz sound. Load any other FM-1 firmware from the firmware button."
-      : "Running " + (m.name || i.name) + " " + (m.version || "") + (m.authors ? " by " + m.authors.join(", ") : "") + " from its .rfm1 file.";
+    var h1 = cur.builtin && m.id === "h1", hub = "https://thefirmwarehub.com/firmware/h1/";
+    $("sub").innerHTML = h1
+      ? "h1, a firmware for the M-VAVE FM-1, running from its own code: the same 240 × 240 pixels and 44.1 kHz sound. Put it on your FM-1 from <a href=\"" + hub + "\" target=\"_blank\" rel=\"noopener\">The Firmware Hub</a>. Load any other FM-1 firmware from the firmware button."
+      : esc("Running " + (m.name || i.name) + " " + (m.version || "") + (m.authors ? " by " + m.authors.join(", ") : "") + " from its .rfm1 file.");
     rows.push(["Name", m.name + " " + m.version]);
     if (m.authors && m.authors.length) rows.push(["By", m.authors.join(", ")]);
     rows.push(["Licence", lic(m.license) + (lic(m.license) !== m.license ? " (" + m.license + ")" : "")]);
     rows.push(["Source", link(src)]);
+    if (h1) rows.push(["Install", '<a href="' + hub + '" target="_blank" rel="noopener">h1 on The Firmware Hub</a>']);
     if (m.glue_url) rows.push(["Build glue", link(m.glue_url)]);
     if (m.built_by) rows.push(["Built by", m.built_by]);
     rows.push(["Core", "fm1core ABI " + core.abi + (i.family ? ", " + i.family + " family" : "") + (core.sim1 ? ", with the sim1 extension" : "")]);
-    $("aboutmap").innerHTML = rows.map(function (r) { return "<dt>" + r[0] + "</dt><dd>" + (r[0] === "Source" || r[0] === "Build glue" ? r[1] : esc(r[1])) + "</dd>"; }).join("");
+    $("aboutmap").innerHTML = rows.map(function (r) { return "<dt>" + r[0] + "</dt><dd>" + (r[0] === "Source" || r[0] === "Build glue" || r[0] === "Install" ? r[1] : esc(r[1])) + "</dd>"; }).join("");
     var credits = fw.credits || i.credits;
     $("credits").hidden = !credits;
     $("credits").textContent = credits || "";
