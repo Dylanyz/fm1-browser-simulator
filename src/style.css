@@ -365,6 +365,7 @@ header .tools { display: flex; gap: 8px; flex-wrap: wrap; }
 }
 .wk.on, .bk.on { background: var(--ink); }
 .btn.latched { outline: 2px solid var(--ink); outline-offset: 2px; }
+.btn.armed { outline: 2px dashed var(--ink); outline-offset: 2px; }
 .wk em, .bk em {
   position: absolute;
   left: 50%;
