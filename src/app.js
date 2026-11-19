@@ -92,22 +92,55 @@
     if (el) el.classList.toggle("down", !!down);
     if (core) core.button(b, down);
   }
+  /* Shift-click sets a button aside ("armed") rather than pressing it, so two buttons can go down in
+   * the same instant the way two fingers press them on the device (SEQ + REC, OCT- + OCT+), before
+   * either one's own hold can fire. An armed button goes down with the next thing you do:
+   *   - with a button you press, as a pair, and both come up when that button does;
+   *   - with an encoder, a slider or a note key, and then it stays down (latched) until you click it,
+   *     so you can keep turning while it is held (EDIT + SELECT and the like).
+   * Shift-click an armed or latched button again, or click a latched one, to let it go. */
+  function armed() { return btnEls.map(function (el, b) { return el && el.classList.contains("armed") ? b : -1; }).filter(function (b) { return b >= 0; }); }
+  function unlatch(b) {
+    var el = btnEls[b];
+    if (!el) return;
+    el.classList.remove("armed", "latched");
+    if (el.classList.contains("down")) press(b, 0);
+  }
+  /* the armed buttons go down now and stay down */
+  function holdArmed() {
+    armed().forEach(function (b) { btnEls[b].classList.remove("armed"); btnEls[b].classList.add("latched"); press(b, 1); });
+  }
+  var pairs = {};                              /* button -> the armed buttons that went down with it */
+  function down(b) {
+    var with_ = armed().filter(function (a) { return a !== b; });
+    with_.forEach(function (a) { btnEls[a].classList.remove("armed"); btnEls[a].classList.add("paired"); press(a, 1); });
+    pairs[b] = with_;
+    downAt[b] = performance.now();
+    press(b, 1);
+  }
+  var downAt = [];
+  function up(b) {
+    if (!btnEls[b] || !btnEls[b].classList.contains("down") || btnEls[b].classList.contains("latched")) return;
+    var held = performance.now() - (downAt[b] || 0);
+    if (held < 40) { setTimeout(function () { up(b); }, 40 - held); return; }   /* a quick click still reaches the firmware */
+    press(b, 0);
+    (pairs[b] || []).forEach(function (a) { btnEls[a].classList.remove("paired"); press(a, 0); });
+    delete pairs[b];
+  }
   function bindButton(el, b) {
     btnEls[b] = el;
-    /* Shift-click latches a button down until the next click, so the mouse is free to turn an encoder
-     * while the firmware sees the button held (EDIT + SELECT and the like). */
     el.addEventListener("pointerdown", function (e) {
       e.preventDefault(); startAudio();
-      if (el.classList.contains("latched")) { el.classList.remove("latched"); press(b, 0); return; }
-      if (e.shiftKey) { el.classList.add("latched"); press(b, 1); return; }
+      if (el.classList.contains("latched") || el.classList.contains("armed")) { unlatch(b); return; }
+      if (e.shiftKey) { el.classList.add("armed"); return; }
       try { el.setPointerCapture(e.pointerId); } catch (x) { /* fine */ }
-      press(b, 1);
+      down(b);
     });
-    var up = function () { if (el.classList.contains("down") && !el.classList.contains("latched")) press(b, 0); };
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-    el.addEventListener("keydown", function (e) { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); press(b, 1); } });
-    el.addEventListener("keyup", function (e) { if (e.key === " " || e.key === "Enter") { e.preventDefault(); press(b, 0); } });
+    var lift = function () { up(b); };
+    el.addEventListener("pointerup", lift);
+    el.addEventListener("pointercancel", lift);
+    el.addEventListener("keydown", function (e) { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); startAudio(); down(b); } });
+    el.addEventListener("keyup", function (e) { if (e.key === " " || e.key === "Enter") { e.preventDefault(); up(b); } });
   }
   function buildButtons() {
     var host = $("buttons"), i, el;
@@ -147,7 +180,7 @@
    * relative encoder and moves send detents. */
   var HW = R.ROLES.concat(["MASTER"]);
   var ctls = [];
-  function turn(role, d) { if (core && d) { startAudio(); core.turn(role, d); } }
+  function turn(role, d) { if (core && d) { startAudio(); holdArmed(); core.turn(role, d); } }
   function info(c) {
     if (c.role === 7) return { absolute: true, value: core ? core.master() : 820, lo: 0, hi: 1023, name: "VOLUME", text: Math.round((core ? core.master() : 820) / 10.23) + "%" };
     var v = core && core.ctl(c.role), l = core && core._lbl && core._lblEpoch ? core._lbl[c.role] : null;
@@ -158,6 +191,7 @@
   function setAbs(c, v) {
     if (!core) return;
     startAudio();
+    holdArmed();
     if (c.role === 7) core.master(v); else core.ctlSet(c.role, v);
   }
   function nudges(c, html) {
@@ -332,7 +366,7 @@
   /* ---- keys: velocity from where the key is hit ---- */
   var NOTE = ["F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E"];
   var keyEls = [], held = {}, count = [];
-  function keyDown(k, vel) { count[k] = (count[k] || 0) + 1; if (count[k] === 1) { if (core) core.key(k, 1, vel); keyEls[k].classList.add("on"); } }
+  function keyDown(k, vel) { count[k] = (count[k] || 0) + 1; if (count[k] === 1) { holdArmed(); if (core) core.key(k, 1, vel); keyEls[k].classList.add("on"); } }
   function keyUp(k) { if (!count[k]) return; count[k]--; if (!count[k]) { if (core) core.key(k, 0); keyEls[k].classList.remove("on"); } }
   function buildKeys() {
     var host = $("keys"), whites = 16, wi = 0, k, el, black;
@@ -377,7 +411,7 @@
     host.addEventListener("contextmenu", function (e) { e.preventDefault(); });
   }
   var KEYMAP = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyR: 5, KeyF: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16, BracketLeft: 17, Quote: 18 };
-  function tap(b) { press(b, 1); setTimeout(function () { press(b, 0); }, 60); }
+  function tap(b) { down(b); setTimeout(function () { up(b); }, 60); }
   function bindComputerKeys() {
     var labels = { 0: "A", 1: "W", 2: "S", 3: "E", 4: "D", 5: "R", 6: "F", 7: "G", 8: "Y", 9: "H", 10: "U", 11: "J", 12: "K", 13: "O", 14: "L", 15: "P", 16: ";", 17: "[", 18: "'" };
     Object.keys(labels).forEach(function (k) { var em = document.createElement("em"); em.textContent = labels[k]; keyEls[k].appendChild(em); });
@@ -544,6 +578,8 @@
         prevLcd.fill(1);
         ledKey = "";
         Object.keys(count).forEach(function (k) { count[k] = 0; keyEls[k].classList.remove("on"); });
+        btnEls.forEach(function (el) { if (el) el.classList.remove("down", "armed", "latched", "paired"); });
+        pairs = {};
         $("halt").classList.remove("on");
         $("log").textContent = "";
         setPref("fm1sim.last", entry.key);
