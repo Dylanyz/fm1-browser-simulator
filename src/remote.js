@@ -12,18 +12,24 @@
  *     master: function (adc) {},                   // 0..1023
  *     status: function (state, text) {}            // state: "looking", "starting", "live", "off"
  *   });
- *   r.leds(Fm1Remote.ledsBody(pos, level, green));  r.owns(port);  r.stop();
+ *   r.leds(Fm1Remote.ledsBody(pos, level, green));  r.screen(core.lcdBytes());  r.owns(port);  r.stop();
+ *
+ * The screen goes back only when src/remote-screen.js (MPL-2.0, its encoder) is loaded too.
  */
 (function (root) {
   "use strict";
 
   var ID = [0x7d, 0x52, 0x46];                 /* non-commercial 7D, then "RF" */
-  var HELLO = 0x01, SESSION = 0x10, LEDS = 0x11, PANEL_REQ = 0x13, TOUCH = 0x14;
-  var HELLO_R = 0x41, ACK = 0x46, PANEL_R = 0x53;
+  var HELLO = 0x01, SESSION = 0x10, LEDS = 0x11, TILES = 0x12, PANEL_REQ = 0x13, TOUCH = 0x14;
+  var HELLO_R = 0x41, ACK = 0x46, FRAME_ACK = 0x52, PANEL_R = 0x53;
   var NKEY = 27, NBTN = 14, NENC = 7, KEEPALIVE = 3000, CAP_TOUCH = 1 << 10;
   /* in ms: between rounds of HELLO, for the ACK, between keepalives, without PANEL_R (it comes every 500 ms)
-   * before the session counts as gone, how long a control's own MIDI event outranks PANEL_R, LEDS at least this often */
-  var T = { again: 1000, ack: 500, req: 1000, lost: 1600, settle: 60, leds: 1000, touch: 300 };
+   * before the session counts as gone, how long a control's own MIDI event outranks PANEL_R, LEDS at least this often,
+   * between screen frames (20 a second), for a FRAME_ACK */
+  var T = { again: 1000, ack: 500, req: 1000, lost: 1600, settle: 60, leds: 1000, touch: 300, frame: 50, frameAck: 1000 };
+  /* the screen over USB-MIDI SysEx: about 280 KB/s, so 14000 bytes a frame at 20 a second, in bodies of at most
+   * 1024 bytes, at most 2 frames unacknowledged */
+  var BUDGET = 14000, BODY = 1024, IN_FLIGHT = 2;
   var PORT = /FM-?1|RemoteFM1/i, NOT = /update|ota-/i;
 
   /* ---- the wire: 7-in-8 packing (a byte of top bits, then up to 7 low-bit bytes), little-endian fields ---- */
@@ -84,6 +90,7 @@
     this.h = h;
     this.now = opt.now || function () { return typeof performance !== "undefined" ? performance.now() : Date.now(); };
     this.touch = opt.touch !== false;          /* ask for the keys' real velocity when the unit can */
+    this.scr = opt.screen !== false && root.Fm1RemoteScreen ? new root.Fm1RemoteScreen.Screen() : null;
     this.state = "off";
     this.hooked = {};
     this.timer = 0;
@@ -114,6 +121,7 @@
     return !!this.input && !!port && (port.id === this.input.id || port.name === this.input.name);
   };
   Remote.prototype.leds = function (body) { this.ledsWant = body; };
+  Remote.prototype.screen = function (lcd) { if (this.scr) this.scr.submit(lcd); };
 
   Remote.prototype._set = function (state, why) {
     this.state = state;
@@ -186,6 +194,10 @@
     this.ledsSent = null;
     this.touchAsked = 0;
     if (this.touch && this.info.caps & CAP_TOUCH) { this._send(TOUCH, [1]); this.touchAsked = now; }
+    if (this.scr) this.scr.reset();            /* a session starts with the device's screen black */
+    this.frame = 0;
+    this.inflight = [];
+    this.tFrame = -Infinity;
     this._set("live", "playing from RemoteFM1 " + this.info.version);
   };
 
@@ -209,10 +221,22 @@
         for (same = !!b, i = 0; same && i < 45; i++) same = a[i] === b[i];
         if (!same || now - this.tLeds >= T.leds) { this._send(LEDS, Array.prototype.slice.call(a)); this.ledsSent = a; this.tLeds = now; }
       }
+      this._frame(now);
       if (now - this.tTx >= T.req) this._send(PANEL_REQ, []);   /* any message keeps the session; this one when nothing else went */
     }
   };
 
+  /* one frame of the screen's changed tiles, when the device has room for it */
+  Remote.prototype._frame = function (now) {
+    var s = this.scr, self = this, f = this.frame;
+    if (!s) return;
+    if (this.inflight.length && now - this.inflight[0].t > T.frameAck) { this.inflight = []; s.invalidate(); }   /* lost: all again */
+    if (this.inflight.length >= IN_FLIGHT || now - this.tFrame < T.frame || !s.pending()) return;
+    s.encode(f, BUDGET, BODY).forEach(function (b) { self._send(TILES, b); });
+    this.inflight.push({ f: f, t: now });
+    this.frame = (f + 1) & 0xffff;
+    this.tFrame = now;
+  };
   Remote.prototype._midi = function (port, d) {
     var now = this.now(), m, info, r;
     if (!d || !d.length) return;
@@ -225,6 +249,13 @@
       }
       if (!this.input || port.id !== this.input.id) return;
       if (m.cmd === ACK && this.state === "starting") this._live(now);
+      else if (m.cmd === FRAME_ACK && this.state === "live" && m.body.length >= 3) {
+        var f = u16(m.body, 0), at = -1;
+        this.inflight.forEach(function (x, i) { if (x.f === f) at = i; });
+        if (at >= 0) this.inflight.splice(0, at + 1);
+        if (this.scr && m.body[2] & 2) this.scr.reset();             /* its shadow was reset: black */
+        else if (this.scr && m.body[2] & 1) this.scr.invalidate();   /* a decode error */
+      }
       else if (m.cmd === PANEL_R && (r = panel(m.body))) {
         if (this.state === "starting" && r.flags & 1) this._live(now);   /* (its ACK was lost) */
         if (this.state !== "live") return;

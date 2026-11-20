@@ -3,7 +3,7 @@
  * firmware sees.   node tests/remote.js */
 "use strict";
 const fs = require("fs"), path = require("path"), assert = require("assert");
-const Rfm1 = require("../src/rfm1.js"), F = require("../src/remote.js");
+const Rfm1 = require("../src/rfm1.js"), F = require("../src/remote.js"), S = require("../src/remote-screen.js");
 
 /* ---- the fakes ---- */
 function emitter(o) {
@@ -34,7 +34,7 @@ const le16 = v => [v & 255, v >> 8 & 255];
 /* an FM-1 running RemoteFM1: answers HELLO and SESSION into a queue that deliver() hands to the page */
 function device(opt) {
   opt = opt || {};
-  const d = { q: [], session: false, got: [], panel: { keys: 0, buttons: 0, enc: [0, 0, 0, 0, 0, 0, 0], master: 512 } };
+  const d = { q: [], session: false, got: [], shadow: new Uint8Array(240 * 240 * 2), panel: { keys: 0, buttons: 0, enc: [0, 0, 0, 0, 0, 0, 0], master: 512 } };
   d.got = m => {
     const x = F.parse(m);
     if (!x) return;
@@ -55,6 +55,7 @@ function device(opt) {
     } else if (x.cmd === 0x13) d.panelR();
     else if (x.cmd === 0x14) d.touch = x.body[0];
     else if (x.cmd === 0x11) d.leds = Array.from(x.body);
+    else if (x.cmd === 0x12) { const r = applyTiles(d.shadow, x.body); d.tiles = (d.tiles || []).concat([r]); }
   };
   d.reply = (cmd, body) => d.q.push(F.sx(cmd, body));
   d.midi = (...b) => d.q.push(b);
@@ -88,7 +89,7 @@ function setup(opt) {
   const other = a.plug(9, "IAC Driver Bus 1");                 /* not an FM-1: never sent HELLO */
   const ota = a.plug(8, "ota-FM-1_015");                       /* the update loader: never sent HELLO */
   const fm = a.plug(1, "h1 FM-1", dev);                        /* CoreMIDI keeps the first firmware's name */
-  const r = F.start(a, pg.h, Object.assign({ now, manual: true}, opt));
+  const r = F.start(a, pg.h, Object.assign({ now, manual: true, screen: false }, opt));
   return { a, dev, pg, r, other, ota, fm };
 }
 function live(opt) {
@@ -99,6 +100,37 @@ function live(opt) {
   return s;
 }
 const step = (s, ms) => { const end = clock + ms; while (clock < end) { clock += 10; s.r.tick(); } };
+
+/* TILES into a device's shadow (240 x 240, BE RGB565 bytes), written from the protocol: { frame, end, rects } */
+function applyTiles(sh, b) {
+  const frame = b[0] | b[1] << 8, flags = b[2], n = b[3], encs = [];
+  let o = 4;
+  const put = (i, hi, lo) => { sh[2 * i] = hi; sh[2 * i + 1] = lo; };
+  for (let r = 0; r < n; r++) {
+    const x = b[o], y = b[o + 1], w = b[o + 2], h = b[o + 3], enc = b[o + 4];
+    o += 5;
+    encs.push(enc);
+    assert.ok(w >= 1 && h >= 1 && x + w <= 240 && y + h <= 240, "rect in bounds");
+    if (enc === 0) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++, o += 2) put((y + j) * 240 + x + i, b[o], b[o + 1]); }
+    else if (enc === 1) { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put((y + j) * 240 + x + i, b[o], b[o + 1]); o += 2; }
+    else if (enc === 2) {
+      const nc = b[o++], pal = [], bpp = nc <= 2 ? 1 : nc <= 4 ? 2 : 4, rb = Math.ceil(w * bpp / 8);
+      assert.ok(nc >= 2 && nc <= 16);
+      for (let k = 0; k < nc; k++, o += 2) pal.push([b[o], b[o + 1]]);
+      for (let j = 0; j < h; j++, o += rb) for (let i = 0; i < w; i++) {
+        const bit = i * bpp, idx = b[o + (bit >> 3)] >> (8 - bpp - (bit & 7)) & ((1 << bpp) - 1);
+        put((y + j) * 240 + x + i, pal[idx][0], pal[idx][1]);
+      }
+    } else if (enc === 3) {
+      let p = 0;
+      while (p < w * h) { const len = b[o] + 1; for (let k = 0; k < len; k++, p++) put((y + Math.floor(p / w)) * 240 + x + p % w, b[o + 1], b[o + 2]); o += 3; }
+      assert.strictEqual(p, w * h, "RLE ends on the rect");
+    } else assert.fail("unknown enc " + enc);
+  }
+  assert.strictEqual(o, b.length, "the body ends with its last rect");
+  return { frame, end: !!(flags & 1), rects: n, encs };
+}
+const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -305,6 +337,70 @@ test("with h1: the FM-1's panel reaches the firmware as the same matrix state", 
   assert.strictEqual(one[3], 1 << 4, "key F3 (matrix id 14) is keymap row 4, column 3");
   const fx = F.ledsBody(core.btnLed, [255], 0);
   assert.strictEqual(fx[6], 1 << 1, "FX (matrix id 2) is keymap row 1, column 6");
+});
+
+test("the screen encoder: every kind of picture arrives exact, in bodies of at most 1024 bytes", async () => {
+  const core = await Rfm1.Core.create(Rfm1.parse(fs.readFileSync(path.join(__dirname, "../firmware/h1.rfm1"))));
+  core.boot(null);
+  const pics = [];
+  const pic = f => { const b = new Uint8Array(240 * 240 * 2); for (let i = 0; i < 57600; i++) { const c = f(i % 240, Math.floor(i / 240)) & 0xffff; b[2 * i] = c >> 8; b[2 * i + 1] = c & 255; } return b; };
+  pics.push(pic(() => 0xf800));                                          /* FILL */
+  pics.push(pic((x, y) => (x >> 3 ^ y >> 3) & 1 ? 0xffff : 0x0010));     /* two colours: PAL */
+  pics.push(pic((x, y) => ((x + y) >> 2) * 0x0841));                     /* many colours, runs: RLE */
+  let z = 7; pics.push(pic(() => (z = z * 1103515245 + 12345 >>> 0) >>> 16));   /* noise: RAW */
+  pics.push(pic((x, y) => [0, 0x1234, 0xabcd, 0xffff, 0x07e0][(x * 7 + y * 3) % 5]));   /* 5 colours: PAL at 4 bpp */
+  for (let k = 0; k < 4; k++) { core.runMs(400); core.turn(2, 1); pics.push(core.lcdBytes().slice()); }
+  const s = new S.Screen(), sh = new Uint8Array(240 * 240 * 2);
+  let frame = 0, frames = 0;
+  const used = new Set();
+  for (const p of pics) {
+    s.submit(p);
+    while (s.pending()) {
+      const bodies = s.encode(frame++, 14000, 1024);
+      frames++;
+      bodies.forEach((b, i) => {
+        assert.ok(b.length <= 1024, "a body fits SysEx");
+        const r = applyTiles(sh, b);
+        r.encs.forEach(e => used.add(e));
+        assert.strictEqual(r.end, i === bodies.length - 1, "END on the last body only");
+      });
+    }
+    assert.ok(same(sh, p), "the shadow is the picture");
+  }
+  assert.deepStrictEqual([...used].sort(), [0, 1, 2, 3], "RAW, FILL, PAL and RLE all used");
+  assert.ok(frames > pics.length, "the noise took more than one frame's budget");
+  s.submit(pics[pics.length - 1]);
+  assert.deepStrictEqual(s.encode(frame, 14000, 1024), [], "nothing changed: nothing sent");
+  s.invalidate();
+  assert.strictEqual(s.pending(), 225);
+});
+
+test("the screen goes to the device: frames in flight wait for FRAME_ACK, a lost one sends it all again", async () => {
+  const core = await Rfm1.Core.create(Rfm1.parse(fs.readFileSync(path.join(__dirname, "../firmware/h1.rfm1"))));
+  core.boot(null);
+  core.runMs(1500);
+  const s = live({ screen: true });
+  const tilesSent = () => s.fm.o.sent.map(F.parse).filter(x => x.cmd === 0x12);
+  const lcd = core.lcdBytes().slice();
+  for (let i = 0; i < 57600; i += 3) { lcd[2 * i] ^= 0x55; }             /* a busy picture: several frames */
+  s.r.screen(lcd);
+  for (let i = 0; i < 10; i++) { clock += 60; s.r.tick(); }
+  const frames = new Set(tilesSent().map(x => x.body[0] | x.body[1] << 8));
+  assert.strictEqual(frames.size, 2, "two frames, then it waits for FRAME_ACK");
+  const ack = f => { s.dev.reply(0x52, [f & 255, f >> 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); s.dev.deliver(); };
+  for (let k = 0; k < 40 && !same(s.dev.shadow, lcd); k++) {
+    const last = tilesSent().pop();
+    ack(last.body[0] | last.body[1] << 8);
+    clock += 60; s.r.tick();
+  }
+  assert.ok(same(s.dev.shadow, lcd), "the device's shadow is the simulator's screen");
+  const before = tilesSent().length;
+  s.r.screen(core.lcdBytes().slice());
+  clock += 60; s.r.tick();                                               /* sent, and never acknowledged */
+  clock += 60; s.r.tick();
+  clock += 1100; s.r.tick();
+  assert.ok(tilesSent().length > before + 1, "sent again after the FRAME_ACK timeout");
+  assert.ok(F.T.frameAck === 1000);
 });
 
 (async () => {

@@ -540,6 +540,7 @@
     if (core.lcdWrites() !== shownWrites) {
       shownWrites = core.lcdWrites();
       bytes = drawLcd();
+      if (remote) remote.screen(core.lcdBytes());
       lb = core.linkBytes();
       ms = (lb >= 0 ? lb : bytes) * 8 / 44000;
       linkMs += (ms - linkMs) * 0.08;
