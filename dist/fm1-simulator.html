@@ -1328,7 +1328,9 @@ kbd {
   function text(b, i, n) { var s = "", k; for (k = i; k < i + n && b[k]; k++) s += String.fromCharCode(b[k]); return s; }
   function hello(b) {
     if (b.length < 51) return null;
-    return { name: text(b, 0, 16), proto: b[16], version: text(b, 17, 8), caps: b.length >= 57 ? u16(b, 55) : 0 };
+    /* a reply over Bluetooth MIDI has at most 256 send packets free (sxq) with transports bit4 set */
+    return { name: text(b, 0, 16), proto: b[16], version: text(b, 17, 8), caps: b.length >= 57 ? u16(b, 55) : 0,
+      ble: u16(b, 29) <= 256 && !!(b[25] & 16) };
   }
   function panel(b) {
     var enc = [], i;
@@ -1498,7 +1500,7 @@ kbd {
   /* one frame of the screen's changed tiles, when the device has room for it */
   Remote.prototype._frame = function (now) {
     var s = this.scr, self = this, f = this.frame;
-    if (!s) return;
+    if (!s || this.info.ble) return;           /* a few KB/s over Bluetooth: too slow for this pacing, so no screen */           /* a few KB/s over Bluetooth: too slow for this pacing, so no screen */
     if (this.inflight.length && now - this.inflight[0].t > T.frameAck) { this.inflight = []; s.invalidate(); }   /* lost: all again */
     if (this.inflight.length >= IN_FLIGHT || now - this.tFrame < T.frame || !s.pending()) return;
     s.encode(f, BUDGET, BODY).forEach(function (b) { self._send(TILES, b); });

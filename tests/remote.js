@@ -45,6 +45,7 @@ function device(opt) {
       b[16] = opt.proto || 2;
       "0.4.0".split("").forEach((c, i) => { b[17 + i] = c.charCodeAt(0); });
       b[55] = (opt.caps || 0) & 255; b[56] = (opt.caps || 0) >> 8;
+      b[25] = opt.ble ? 0x31 : 0x07; b[29] = opt.ble ? 128 : 960 & 255; b[30] = opt.ble ? 0 : 960 >> 8;
       d.reply(0x41, b);
     } else if (x.cmd === 0x10 && x.body.length) {
       d.session = !!x.body[0];
@@ -401,6 +402,14 @@ test("the screen goes to the device: frames in flight wait for FRAME_ACK, a lost
   clock += 1100; s.r.tick();
   assert.ok(tilesSent().length > before + 1, "sent again after the FRAME_ACK timeout");
   assert.ok(F.T.frameAck === 1000);
+});
+
+test("no screen over Bluetooth MIDI, where the link is a few KB/s", async () => {
+  const s = live({ screen: true, ble: true });
+  s.r.screen(new Uint8Array(240 * 240 * 2).fill(0x5a));
+  for (let i = 0; i < 10; i++) { clock += 60; s.r.tick(); }
+  assert.strictEqual(s.fm.o.sent.map(F.parse).filter(x => x.cmd === 0x12).length, 0);
+  assert.ok(s.r.info.ble && !live({ screen: true }).r.info.ble);
 });
 
 (async () => {
